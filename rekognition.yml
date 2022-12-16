@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Image Content Detection with AWS Rekognition and Python Lambda
+
+Resources:
+
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "images-bucket-${AWS::Region}-${AWS::AccountId}"
+      
+  ImageLabelsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: image-labels-table
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: image_key
+          AttributeType: S
+        - AttributeName: image_label
+          AttributeType: S
+      KeySchema:
+        - AttributeName: image_key
+          KeyType: HASH
+        - AttributeName: image_label
+          KeyType: RANGE
+          
+  RekognitionLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Architectures:
+        - arm64
+      Runtime: python3.9
+      Handler: rekognition-lambda.event_handler
+      Description: Scan and detect uploaded images using AWS Rekognition
+      FunctionName: rekognition-lambda
+      Environment:
+        Variables:
+          IMAGE_LABELS_TABLE: !Ref ImageLabelsTable
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - "rekognition:*"
+              Resource:
+                - "*"
+        - Statement:
+            - Effect: Allow
+              Action: s3:GetObject*
+              Resource:
+                - !Sub "arn:aws:s3:::images-bucket-${AWS::Region}-${AWS::AccountId}"
+                - !Sub "arn:aws:s3:::images-bucket-${AWS::Region}-${AWS::AccountId}/*"
+        - DynamoDBCrudPolicy:
+            TableName:
+              Ref: ImageLabelsTable
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket:
+              Ref: ImagesBucket
+            Events: s3:ObjectCreated:*
